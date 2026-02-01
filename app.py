@@ -1,54 +1,39 @@
-# app.py
 import streamlit as st
 import tempfile
-from pathlib import Path
+import os
+from langchain_community.llms import Ollama
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain.chains import RetrievalQA
 
-# ---- IMPORTS LANGCHAIN / OLLAMA ----
-try:
-    from langchain_community.llms import Ollama
-    from langchain_community.document_loaders import PyPDFLoader
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    from langchain_community.embeddings import OllamaEmbeddings
-    from langchain_community.vectorstores import Chroma
-    from langchain.chains import RetrievalQA
-except ModuleNotFoundError:
-    st.error("⚠️ Veuillez installer les dépendances dans votre requirements.txt :\n"
-             "langchain, langchain_community, chromadb, streamlit_text_splitter")
-
-# ---- CONFIGURATION PAGE ----
+# --- Page config ---
 st.set_page_config(
-    page_title="LegalAI Dakar",
+    page_title="LegalAI Dakar Demo",
     page_icon="⚖️",
     layout="wide"
 )
 
-# ---- STYLE ----
-st.markdown("""
-<style>
-.stButton>button { width: 100%; height: 3em; border-radius: 5px; }
-</style>
-""", unsafe_allow_html=True)
-
 st.title("⚖️ LegalAI Dakar")
-st.subheader("L'IA Souveraine spécialisée en Droit Sénégalais et OHADA")
+st.subheader("Mini chat IA OHADA - Démo publique")
 
-# ---- SIDEBAR ----
+# --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ Paramètres")
-    model_name = st.selectbox("Modèle local", ["llama3", "mistral"], index=0)
-    st.info("Cette instance tourne localement sur votre machine pour garantir le secret professionnel.")
-    
+    model_name = st.selectbox("Modèle Local", ["llama3", "mistral"])
+    st.info("Cette instance tourne localement pour garantir le secret professionnel.")
     uploaded_file = st.file_uploader("Charger un document juridique (PDF)", type="pdf")
-    
+
     if st.button("Effacer l'historique"):
         st.session_state.messages = []
-        st.rerun()
+        st.experimental_rerun()
 
-# ---- INITIALISATION SESSION ----
+# --- Initialisation session chat ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# ---- FAQ ----
+# --- FAQ ---
 st.markdown("### 💡 Questions fréquentes")
 faq_cols = st.columns(3)
 faqs = [
@@ -65,62 +50,62 @@ for i, question in enumerate(faqs):
         if st.button(question, key=f"faq_{i}"):
             selected_query = question
 
-# ---- LOGIQUE PDF + RAG ----
+# --- Logique IA ---
+def setup_qa(file_path, model):
+    loader = PyPDFLoader(file_path)
+    docs = loader.load()
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    splits = splitter.split_documents(docs)
+    embeddings = OllamaEmbeddings(model=model)
+    vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
+    llm = Ollama(model=model)
+    return RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vectorstore.as_retriever()
+    )
+
 qa_chain = None
+
+# --- Analyse PDF mini OHADA pour démo ---
 if uploaded_file is not None:
-    # Création d'un fichier temporaire
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         tmp_file.write(uploaded_file.getvalue())
-        tmp_file_path = tmp_file.name
+        tmp_path = tmp_file.name
+    qa_chain = setup_qa(tmp_path, model_name)
+    st.success("Document analysé. Posez vos questions ci-dessous ou utilisez les FAQ.")
+else:
+    # Démo avec PDF par défaut dans /pdfs/
+    default_pdf = os.path.join("pdfs", "acte_uniforme_ohada.pdf")
+    if os.path.exists(default_pdf):
+        qa_chain = setup_qa(default_pdf, model_name)
+        st.info("Mode démo avec PDF OHADA pré-chargé.")
+    else:
+        st.warning("📄 Aucun PDF trouvé pour la démo. Chargez un fichier ou ajoutez un PDF dans /pdfs/.")
 
-    @st.cache_resource
-    def setup_qa(file_path, model_name):
-        # Chargement PDF
-        loader = PyPDFLoader(file_path)
-        docs = loader.load()
-        # Split des textes
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        splits = splitter.split_documents(docs)
-        # Embeddings
-        embeddings = OllamaEmbeddings(model=model_name)
-        vectorstore = Chroma.from_documents(splits, embeddings)
-        # LLM Ollama
-        llm = Ollama(model=model_name)
-        return RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=vectorstore.as_retriever()
-        )
+# --- Chat ---
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-    qa_chain = setup_qa(tmp_file_path, model_name)
-    st.success("📄 Document analysé. Posez vos questions ci-dessous ou utilisez les FAQ.")
-
-# ---- CHAT INTERFACE ----
-user_input = st.chat_input("Votre message...")
+user_input = st.chat_input("Posez votre question...")
 query = selected_query if selected_query else user_input
 
-if query:
+if query and qa_chain:
     st.session_state.messages.append({"role": "user", "content": query})
     with st.chat_message("user"):
         st.markdown(query)
 
     with st.chat_message("assistant"):
-        with st.spinner("Analyse juridique en cours..."):
-            if qa_chain:
-                try:
-                    result = qa_chain.invoke(query)
-                    answer = result["result"]
-                except Exception as e:
-                    answer = f"Erreur avec Ollama : {e}"
-            else:
-                answer = "⚠️ Aucun PDF chargé, je peux seulement répondre aux FAQ."
-            st.markdown(answer)
-            st.session_state.messages.append({"role": "assistant", "content": answer})
-
-# Affichage de l'historique
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        with st.spinner("Analyse en cours..."):
+            try:
+                response = qa_chain.invoke(query)
+                answer = response["result"]
+                st.markdown(answer)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
+            except Exception as e:
+                st.error(f"Erreur Ollama: {str(e)}")
+                st.info("Vérifiez que le serveur Ollama tourne localement.")
 
 st.markdown("---")
-st.caption("© 2024 LegalAI Dakar - Confidentialité Garantie - Solution Air-Gapped")
+st.caption("© 2026 LegalAI Dakar - Démo publique")
