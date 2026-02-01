@@ -1,8 +1,19 @@
-streamlit==1.32.2
-langchain==0.1.20
-langchain-community==0.0.38
-langchain-text-splitters==0.0.1
-chromadb==0.4.24
-pypdf==4.2.0
-openai==1.14.3
-tiktoken==0.6.0
+# Streamlit pour l'interface web
+streamlit==1.26.0
+
+# LangChain et extensions communautaires pour Ollama, PDF et RAG
+langchain==0.1.127
+langchain-community==0.0.24
+
+# Vector store et embeddings
+chromadb==0.4.1
+openai==1.32.0   # utile si jamais tu changes de moteur d'IA
+
+# PDF loader
+pypdf==3.12.1
+
+# Text splitter pour découper les documents
+tiktoken==0.4.0
+
+# Optional (pour traitement PDF/temps/temp files)
+python-multipart==0.0.6
