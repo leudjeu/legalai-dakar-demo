@@ -1,91 +1,111 @@
 import streamlit as st
 import tempfile
-import os
-
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+from langchain.document_loaders import PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores import Chroma
 from langchain.chains import RetrievalQA
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-# -------------------------------
-# CONFIG STREAMLIT
-# -------------------------------
+# --------------------------------------------------
+# CONFIGURATION PAGE
+# --------------------------------------------------
 st.set_page_config(
-    page_title="LegalAI Dakar – Démo OHADA",
+    page_title="LegalAI Dakar",
     page_icon="⚖️",
     layout="wide"
 )
 
-st.title("⚖️ LegalAI Dakar")
-st.subheader("IA Juridique – Démo publique OHADA")
-st.caption("⚠️ Version démonstration – Documents publics – Aucune consultation juridique")
-
-# -------------------------------
-# CSS
-# -------------------------------
+# --------------------------------------------------
+# STYLE CSS (cabinet d'avocats)
+# --------------------------------------------------
 st.markdown("""
 <style>
 .main {
-    background-color: #0f172a;
-    color: #e5e7eb;
+    background-color: #f8f9fa;
 }
-.block-container {
-    padding-top: 2rem;
+.stButton>button {
+    width: 100%;
+    border-radius: 6px;
+    height: 3em;
+    background-color: #ffffff;
+    color: #1a1a1a;
+    border: 1px solid #ced4da;
+}
+.stButton>button:hover {
+    border-color: #0d6efd;
+    color: #0d6efd;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------
-# SIDEBAR
-# -------------------------------
-with st.sidebar:
-    st.header("ℹ️ À propos")
-    st.markdown("""
-    **LegalAI Dakar**  
-    Démonstration d’un chatbot IA juridique  
-    spécialisé en droit OHADA.
-    
-    🔒 Version cabinet = OFFLINE  
-    🌐 Cette version = MARKETING
-    """)
+# --------------------------------------------------
+# TITRES
+# --------------------------------------------------
+st.title("⚖️ LegalAI Dakar")
+st.subheader("IA juridique spécialisée en droit sénégalais et OHADA")
 
-    if st.button("🧹 Effacer l'historique"):
+# --------------------------------------------------
+# SIDEBAR
+# --------------------------------------------------
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    st.info("Démo publique sécurisée – GPT + documents OHADA")
+    uploaded_file = st.file_uploader(
+        "📄 Charger un document juridique (PDF)",
+        type="pdf"
+    )
+
+    if st.button("🗑️ Effacer l'historique"):
         st.session_state.messages = []
         st.rerun()
 
-# -------------------------------
-# SESSION
-# -------------------------------
+# --------------------------------------------------
+# SESSION CHAT
+# --------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# -------------------------------
-# CHARGEMENT DES PDF (AUTO)
-# -------------------------------
-PDF_FILES = [
-    "data/ohada_auscgie.pdf",
-    "data/aupsrve.pdf"
+# --------------------------------------------------
+# FAQ
+# --------------------------------------------------
+st.markdown("### 💡 Questions fréquentes")
+faq_cols = st.columns(3)
+
+faqs = [
+    "Quelles sont les conditions de création d'une SARL selon l'OHADA ?",
+    "Quelle est la durée d'un bail commercial au Sénégal ?",
+    "Quelles sont les compétences de la CCJA ?",
+    "Quelles sont les mentions obligatoires d'un contrat de travail ?",
+    "Comment transformer une SARL en SA selon l'OHADA ?",
+    "Quels sont les délais de prescription en droit commercial ?"
 ]
 
-documents = []
-for pdf in PDF_FILES:
-    loader = PyPDFLoader(pdf)
-    documents.extend(loader.load())
+selected_query = None
+for i, q in enumerate(faqs):
+    with faq_cols[i % 3]:
+        if st.button(q, key=f"faq_{i}"):
+            selected_query = q
 
-# -------------------------------
-# RAG SETUP (CACHE)
-# -------------------------------
+# --------------------------------------------------
+# FONCTION RAG (CACHE)
+# --------------------------------------------------
 @st.cache_resource
-def setup_qa(_docs):
+def setup_qa(pdf_path):
+    loader = PyPDFLoader(pdf_path)
+    documents = loader.load()
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=150
     )
-    splits = splitter.split_documents(_docs)
+    splits = splitter.split_documents(documents)
 
     embeddings = OpenAIEmbeddings()
-    vectorstore = Chroma.from_documents(splits, embeddings)
+
+    vectorstore = Chroma.from_documents(
+        documents=splits,
+        embedding=embeddings
+    )
 
     llm = ChatOpenAI(
         model="gpt-3.5-turbo",
@@ -98,50 +118,51 @@ def setup_qa(_docs):
         retriever=vectorstore.as_retriever()
     )
 
-qa_chain = setup_qa(documents)
+# --------------------------------------------------
+# LOGIQUE PRINCIPALE
+# --------------------------------------------------
+if uploaded_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(uploaded_file.getvalue())
+        pdf_path = tmp.name
 
-# -------------------------------
-# AFFICHAGE CHAT
-# -------------------------------
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    qa_chain = setup_qa(pdf_path)
+    st.success("📘 Document analysé. Posez votre question.")
 
-# -------------------------------
-# INPUT UTILISATEUR
-# -------------------------------
-question = st.chat_input("Posez votre question juridique (OHADA)")
+    # Affichage historique
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-if question:
-    st.session_state.messages.append({
-        "role": "user",
-        "content": question
-    })
+    user_input = st.chat_input("Posez votre question juridique…")
+    query = selected_query if selected_query else user_input
 
-    with st.chat_message("user"):
-        st.markdown(question)
+    if query:
+        st.session_state.messages.append(
+            {"role": "user", "content": query}
+        )
+        with st.chat_message("user"):
+            st.markdown(query)
 
-    with st.chat_message("assistant"):
-        with st.spinner("Analyse juridique en cours..."):
-            try:
-                result = qa_chain.invoke(question)
-                answer = result["result"]
+        with st.chat_message("assistant"):
+            with st.spinner("Analyse juridique en cours…"):
+                try:
+                    response = qa_chain.invoke(query)
+                    answer = response["result"]
+                    st.markdown(answer)
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": answer}
+                    )
+                except Exception as e:
+                    st.error("Erreur lors de l'analyse.")
+                    st.exception(e)
 
-                st.markdown(answer)
+else:
+    st.warning("⬅️ Chargez un document PDF OHADA pour démarrer.")
+    st.info("Cette démo est conçue pour 1–2 documents juridiques maximum.")
 
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": answer
-                })
-            except Exception as e:
-                st.error("Erreur IA. Vérifiez la clé OpenAI.")
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": "Erreur technique temporaire."
-                })
-
-# -------------------------------
+# --------------------------------------------------
 # FOOTER
-# -------------------------------
+# --------------------------------------------------
 st.markdown("---")
-st.caption("© 2024 LegalAI Dakar – Démo Marketing – Confidentialité Garantie")
+st.caption("© 2024 LegalAI Dakar — Démo publique | Produit final : IA souveraine")
