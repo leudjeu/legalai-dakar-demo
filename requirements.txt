@@ -1,18 +1,18 @@
 # Interface web
 streamlit==1.26.0
 
-# LangChain stable
-langchain==0.1.153
+# LangChain dernière version disponible sur PyPI
+langchain>=0.0.154
 
-# Extensions nécessaires pour PDF, embeddings et vectorstore
+# PDF et texte
 pypdf==3.12.1
-chromadb==0.4.1
-
-# Pour le découpage des textes
 tiktoken==0.4.0
 
-# Ollama client
+# Vectorstore
+chromadb==0.4.1
+
+# Langchain community pour Ollama
 langchain-community==0.0.24
 
-# Optional mais utile pour uploads
+# Utilitaires
 python-multipart==0.0.6
